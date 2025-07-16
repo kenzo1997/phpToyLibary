@@ -1,4 +1,4 @@
-# 📦 PHP Toy Framework
+# 📦 PHP Toy Framework (WIP)
 
 A lightweight, modular, and extendable custom PHP micro-framework built from scratch. Ideal for learning, experimentation, or powering small-to-medium projects.
 
