@@ -79,4 +79,3 @@ class SessionWrapper
         return null;
     }
 }
-?>

@@ -35,8 +35,6 @@ class Request {
   }
 
   public function getParam(string $name): mixed {
-    var_dump($this->params);
-
     if (!array_key_exists($name, $this->params)) {
       throw new \Exception("Param key does not exist: {$name}");
     }
@@ -59,5 +57,3 @@ class Request {
     return $this->files[$key] ?? null;
   }
 }
-
-?>

@@ -3,482 +3,235 @@ declare(strict_types=1);
 
 namespace lib\db;
 
-use RuntimeException;
-
-class SQLBuilder
-{
-    private array $parts = [
-        'type'     => null,
-        'distinct' => false,
-        'select'   => [],
-        'from'     => null,
-        'joins'    => [],
-        'where'    => [],
-        'insert'   => [],
-        'update'   => [],
-        'orderBy' => [],
-        'limit'   => null,
-        'offset'  => null,
-        'groupBy' => [],
-        'having'  => [],
-    ];
-
+/**
+ * SQLBuilder
+ *
+ * @package  db\
+ * @author   Kenzo Coenaerts
+ */
+class SQLBuilder {
+    private string $sql = '';
     private array $bindings = [];
+    private bool $usePlaceholders = false;
 
-    /* =========================
-       SELECT
-    ========================== */
-
-    public function select(string $table, array|string $columns = ['*'], bool $distinct = false): self
-    {
-        $this->parts['type']     = 'select';
-        $this->parts['from']     = $table;
-        $this->parts['select']   = (array) $columns;
-        $this->parts['distinct'] = $distinct;
-
-        return $this;
+    public function __construct(bool $usePlaceholders = true) {
+        $this->usePlaceholders = $usePlaceholders;
     }
 
-    /* =========================
-       INSERT
-    ========================== */
-
-    public function insert(string $table, array $values): self
-    {
-        $this->parts['type'] = 'insert';
-        $this->parts['from'] = $table;
-
-        $columns      = [];
-        $placeholders = [];
-
-        foreach ($values as $column => $value) {
-            $columns[] = $column;
-
-            $placeholder = ':i_' . count($this->bindings);
-            $placeholders[] = $placeholder;
-            $this->bindings[$placeholder] = $value;
-        }
-
-        $this->parts['insert'] = [
-            'columns'      => $columns,
-            'placeholders' => $placeholders
-        ];
-
-        return $this;
-    }
-
-    /* =========================
-       UPDATE
-    ========================== */
-
-    public function update(string $table, array $values): self
-    {
-        $this->parts['type'] = 'update';
-        $this->parts['from'] = $table;
-
-        foreach ($values as $column => $value) {
-            $placeholder = ':u_' . count($this->bindings);
-            $this->parts['update'][] = "$column = $placeholder";
-            $this->bindings[$placeholder] = $value;
-        }
-
-        return $this;
-    }
-
-    /* =========================
-       DELETE
-    ========================== */
-
-    public function delete(string $table): self
-    {
-        $this->parts['type'] = 'delete';
-        $this->parts['from'] = $table;
-
-        return $this;
-    }
-
-    /* =========================
-       WHERE
-    ========================== */
-    public function where(string $column, string $operator, mixed $value): self
-    {
-        if ($value instanceof self) {
-            $subSql = $this->compileSubquery($value);
-            $this->parts['where'][] = "$column $operator $subSql";
+    public function SELECT(string $table, array|string $values = '*', bool $distinct = false): self {
+        if ($values === '*') {
+            $this->sql .= $distinct ? 'SELECT DISTINCT * ' : 'SELECT * ';
+            $this->sql .= 'FROM ' . $this->escapeIdentifier($table);
             return $this;
         }
-    
-        $placeholder = ':w_' . count($this->bindings);
-        $this->parts['where'][] = "$column $operator $placeholder";
-        $this->bindings[$placeholder] = $value;
-    
-        return $this;
-    }
 
-    /* =========================
-       JOINS
-    ========================== */
+        $this->sql .= $distinct ? 'SELECT DISTINCT ' : 'SELECT ';
 
-    public function innerJoin(string $table): self
-    {
-        return $this->addJoin('INNER', $table);
-    }
-
-    public function leftOuterJoin(string $table): self
-    {
-        return $this->addJoin('LEFT OUTER', $table);
-    }
-
-    public function rightOuterJoin(string $table): self
-    {
-        return $this->addJoin('RIGHT OUTER', $table);
-    }
-
-    public function fullOuterJoin(string $table): self
-    {
-        return $this->addJoin('FULL OUTER', $table);
-    }
-
-    private function addJoin(string $type, string $table): self
-    {
-        $this->parts['joins'][] = [
-            'type' => $type,
-            'table' => $table,
-            'condition' => null
-        ];
-
-        return $this;
-    }
-
-    public function on(string $left, string $right): self
-    {
-        $lastIndex = array_key_last($this->parts['joins']);
-
-        if ($lastIndex === null) {
-            throw new RuntimeException('ON called without JOIN.');
+        if (is_array($values)) {
+            $cols = [];
+            foreach ($values as $val) {
+                $cols[] = $this->escapeIdentifier($val);
+            }
+            $this->sql .= implode(', ', $cols) . ' ';
+        } else {
+            $this->sql .= $this->escapeIdentifier($values) . ' ';
         }
 
-        $this->parts['joins'][$lastIndex]['condition'] = "ON $left = $right";
-
+        $this->sql .= 'FROM ' . $this->escapeIdentifier($table);
         return $this;
     }
 
-    public function using(string $column): self
-    {
-        $lastIndex = array_key_last($this->parts['joins']);
+    public function INSERT(string $table, array $data): self {
+        $this->sql .= 'INSERT INTO ' . $this->escapeIdentifier($table) . ' (';
 
-        if ($lastIndex === null) {
-            throw new RuntimeException('USING called without JOIN.');
+        $columns = [];
+        $placeholders = [];
+        foreach ($data as $key => $value) {
+            $columns[] = $this->escapeIdentifier($key);
+            $this->bindings[] = $value;
+            $placeholders[] = '?';
         }
 
-        $this->parts['joins'][$lastIndex]['condition'] = "USING ($column)";
-
+        $this->sql .= implode(', ', $columns) . ') VALUES (' . implode(', ', $placeholders) . ')';
         return $this;
     }
 
+    public function UPDATE(string $table, array $data): self {
+        $this->sql .= 'UPDATE ' . $this->escapeIdentifier($table) . ' SET ';
 
-    //---------------------------------------
-    public function orderBy(string $column, string $direction = 'ASC'): self
-    {
-        $direction = strtoupper($direction);
-    
-        if (!in_array($direction, ['ASC', 'DESC'])) {
-            throw new \InvalidArgumentException('Order direction must be ASC or DESC.');
+        $sets = [];
+        foreach ($data as $key => $value) {
+            $this->bindings[] = $value;
+            $sets[] = $this->escapeIdentifier($key) . ' = ?';
         }
-    
-        $this->parts['orderBy'][] = "$column $direction";
-    
+        $this->sql .= implode(', ', $sets);
         return $this;
     }
 
-    public function limit(int $limit): self
-    {
-        if ($limit < 0) {
-            throw new \InvalidArgumentException('Limit must be positive.');
+    public function DELETE(string $table): self {
+        $this->sql = "DELETE FROM " . $this->escapeIdentifier($table);
+        return $this;
+    }
+
+    public function INNER_JOIN(string $table): self {
+        $this->sql .= " INNER JOIN " . $this->escapeIdentifier($table);
+        return $this;
+    }
+
+    public function LEFT_OUTER_JOIN(string $table): self {
+        $this->sql .= " LEFT JOIN " . $this->escapeIdentifier($table);
+        return $this;
+    }
+
+    public function RIGHT_OUTER_JOIN(string $table): self {
+        $this->sql .= " RIGHT JOIN " . $this->escapeIdentifier($table);
+        return $this;
+    }
+
+    public function FULL_OUTER_JOIN(string $table): self {
+        $this->sql .= " FULL JOIN " . $this->escapeIdentifier($table);
+        return $this;
+    }
+
+    public function USING(string $column): self {
+        $this->sql .= " USING (" . $this->escapeIdentifier($column) . ")";
+        return $this;
+    }
+
+    public function ON(string $col1, string $col2, string $operator = '='): self {
+        $this->sql .= " ON (" . $this->escapeIdentifier($col1) . " " . $operator . " " . $this->escapeIdentifier($col2) . ")";
+        return $this;
+    }
+
+    // WHERE clause methods
+    public function WHERE(string $column, string $operator = '=', mixed $value = null): self {
+        $this->sql .= ' WHERE ' . $this->escapeIdentifier($column) . ' ' . $operator;
+        if ($value !== null) {
+            $this->bindings[] = $value;
+            $this->sql .= ' ?';
         }
-    
-        $this->parts['limit'] = $limit;
-    
         return $this;
     }
-    
-    public function offset(int $offset): self
-    {
-        if ($offset < 0) {
-            throw new \InvalidArgumentException('Offset must be positive.');
+
+    public function AND_WHERE(string $column, string $operator = '=', mixed $value = null): self {
+        $this->sql .= ' AND ' . $this->escapeIdentifier($column) . ' ' . $operator;
+        if ($value !== null) {
+            $this->bindings[] = $value;
+            $this->sql .= ' ?';
         }
-    
-        $this->parts['offset'] = $offset;
-    
         return $this;
     }
 
-    // ----------- GROUO BY
-    public function groupBy(string ...$columns): self
-    {
-        foreach ($columns as $column) {
-            $this->parts['groupBy'][] = $column;
+    public function OR_WHERE(string $column, string $operator = '=', mixed $value = null): self {
+        $this->sql .= ' OR ' . $this->escapeIdentifier($column) . ' ' . $operator;
+        if ($value !== null) {
+            $this->bindings[] = $value;
+            $this->sql .= ' ?';
         }
-    
         return $this;
     }
 
-    // ------------ HAVING
-    public function having(string $column, string $operator, mixed $value): self
-    {
-        return $this->addHaving('AND', $column, $operator, $value);
-    }
-    
-    public function orHaving(string $column, string $operator, mixed $value): self
-    {
-        return $this->addHaving('OR', $column, $operator, $value);
+    // Sorting and pagination
+    public function ORDER_BY(string $column, string $direction = 'ASC'): self {
+        $this->sql .= ' ORDER BY ' . $this->escapeIdentifier($column) . ' ' . strtoupper($direction);
+        return $this;
     }
 
-    // ------------- EXISTS
-    public function whereExists(self $sub): self
-    {
-        return $this->addExists('AND', $sub);
-    }
-    
-    public function orWhereExists(self $sub): self
-    {
-        return $this->addExists('OR', $sub);
+    public function GROUP_BY(string $column): self {
+        $this->sql .= ' GROUP BY ' . $this->escapeIdentifier($column);
+        return $this;
     }
 
-    /* =========================
-       COMPILATION
-    ========================== */
-
-    public function toSql(): string
-    {
-        return match ($this->parts['type']) {
-            'select' => $this->compileSelect(),
-            'insert' => $this->compileInsert(),
-            'update' => $this->compileUpdate(),
-            'delete' => $this->compileDelete(),
-            default  => throw new RuntimeException('Invalid query type.')
-        };
+    public function HAVING(string $column, string $operator = '=', mixed $value = null): self {
+        $this->sql .= ' HAVING ' . $this->escapeIdentifier($column) . ' ' . $operator;
+        if ($value !== null) {
+            $this->bindings[] = $value;
+            $this->sql .= ' ?';
+        }
+        return $this;
     }
 
-    public function getBindings(): array
-    {
+    public function LIMIT(int $count): self {
+        $this->sql .= ' LIMIT ' . $count;
+        return $this;
+    }
+
+    public function OFFSET(int $count): self {
+        $this->sql .= ' OFFSET ' . $count;
+        return $this;
+    }
+
+    // Aggregates
+    public function COUNT(string $column = '*'): self {
+        $this->sql .= ' COUNT(' . ($column === '*' ? '*' : $this->escapeIdentifier($column)) . ')';
+        return $this;
+    }
+
+    public function SUM(string $column): self {
+        $this->sql .= ' SUM(' . $this->escapeIdentifier($column) . ')';
+        return $this;
+    }
+
+    public function AVG(string $column): self {
+        $this->sql .= ' AVG(' . $this->escapeIdentifier($column) . ')';
+        return $this;
+    }
+
+    public function MIN(string $column): self {
+        $this->sql .= ' MIN(' . $this->escapeIdentifier($column) . ')';
+        return $this;
+    }
+
+    public function MAX(string $column): self {
+        $this->sql .= ' MAX(' . $this->escapeIdentifier($column) . ')';
+        return $this;
+    }
+
+    // Alias support
+    public function AS(string $alias): self {
+        $this->sql .= ' AS ' . $this->escapeIdentifier($alias);
+        return $this;
+    }
+
+    // Get SQL and bindings
+    public function go(): array {
+        return ['sql' => $this->sql, 'bindings' => $this->bindings];
+    }
+
+    public function getSQL(): string {
+        return $this->sql;
+    }
+
+    public function getBindings(): array {
         return $this->bindings;
     }
 
-    /* =========================
-       PRIVATE COMPILERS
-    ========================== */
-    private function compileSelect(): string
-    {
-        $sql = 'SELECT ';
-    
-        if ($this->parts['distinct']) {
-            $sql .= 'DISTINCT ';
-        }
-    
-        $sql .= implode(', ', $this->parts['select']);
-        $sql .= ' FROM ' . $this->parts['from'];
-    
-        foreach ($this->parts['joins'] as $join) {
-            $sql .= " {$join['type']} JOIN {$join['table']}";
-            if ($join['condition']) {
-                $sql .= " {$join['condition']}";
-            }
-        }
-    
-        if (!empty($this->parts['where'])) {
-            $sql .= ' WHERE ' . implode(' AND ', $this->parts['where']);
-        }
-    
-        // ORDER BY
-        if (!empty($this->parts['orderBy'])) {
-            $sql .= ' ORDER BY ' . implode(', ', $this->parts['orderBy']);
-        }
-    
-        // LIMIT
-        if ($this->parts['limit'] !== null) {
-            $sql .= ' LIMIT ' . $this->parts['limit'];
-        }
-    
-        // OFFSET
-        if ($this->parts['offset'] !== null) {
-            $sql .= ' OFFSET ' . $this->parts['offset'];
-        }
-    
-        return $sql;
-    }
-
-    private function compileInsert(): string
-    {
-        $columns = implode(', ', $this->parts['insert']['columns']);
-        $placeholders = implode(', ', $this->parts['insert']['placeholders']);
-
-        return "INSERT INTO {$this->parts['from']} ($columns) VALUES ($placeholders)";
-    }
-
-    private function compileUpdate(): string
-    {
-        $sql = "UPDATE {$this->parts['from']} SET ";
-        $sql .= implode(', ', $this->parts['update']);
-
-        if (!empty($this->parts['where'])) {
-            $sql .= ' WHERE ' . implode(' AND ', $this->parts['where']);
-        }
-
-        return $sql;
-    }
-
-    private function compileDelete(): string
-    {
-        $sql = "DELETE FROM {$this->parts['from']}";
-
-        if (!empty($this->parts['where'])) {
-            $sql .= ' WHERE ' . implode(' AND ', $this->parts['where']);
-        }
-
-        return $sql;
-    }
-
-    // ---------------------------------
-    private function mergeBindings(SQLBuilder $sub): void
-    {
-        foreach ($sub->getBindings() as $key => $value) {
-            $newKey = ':' . uniqid('sub_');
-            $this->bindings[$newKey] = $value;
-            $subSql = $sub->toSql();
-            $subSql = str_replace($key, $newKey, $subSql);
-        }
-    }
-
-    private function compileSubquery(SQLBuilder $sub): string
-    {
-        $sql = $sub->toSql();
-    
-        foreach ($sub->getBindings() as $placeholder => $value) {
-            $newPlaceholder = ':s_' . count($this->bindings);
-            $this->bindings[$newPlaceholder] = $value;
-            $sql = str_replace($placeholder, $newPlaceholder, $sql);
-        }
-    
-        return "($sql)";
-    }
-
-    // ---------------------------------
-    public function whereInSub(string $column, SQLBuilder $sub): self
-    {
-        $subSql = $this->compileSubquery($sub);
-        $this->parts['where'][] = "$column IN $subSql";
-        return $this;
-    }
-
-    public function fromSub(SQLBuilder $sub, string $alias): self
-    {
-        $this->parts['type'] = 'select';
-    
-        $subSql = $this->compileSubquery($sub);
-        $this->parts['from'] = "$subSql AS $alias";
-    
-        return $this;
-    }
-
-    // --------------------------------
-    public function whereGroup(callable $callback): self
-    {
-        return $this->addWhereGroup('AND', $callback);
-    }
-    
-    public function orWhereGroup(callable $callback): self
-    {
-        return $this->addWhereGroup('OR', $callback);
-    }
-
-
-    // ------------------------------------------
-    private function addWhereGroup(string $boolean, callable $callback): self
-    {
-        $subBuilder = new self();
-    
-        $callback($subBuilder);
-    
-        if (empty($subBuilder->parts['where'])) {
-            return $this;
-        }
-    
-        // Merge bindings
-        foreach ($subBuilder->getBindings() as $key => $value) {
-            $newKey = ':w_' . count($this->bindings);
-            $this->bindings[$newKey] = $value;
-    
-            foreach ($subBuilder->parts['where'] as &$where) {
-                $where['condition'] = str_replace($key, $newKey, $where['condition']);
-            }
-        }
-    
-        // Compile grouped conditions
-        $groupSql = '';
-        foreach ($subBuilder->parts['where'] as $index => $where) {
-            if ($index > 0) {
-                $groupSql .= ' ' . $where['boolean'] . ' ';
-            }
-            $groupSql .= $where['condition'];
-        }
-    
-        $this->parts['where'][] = [
-            'boolean' => $boolean,
-            'condition' => '(' . $groupSql . ')'
-        ];
-    
-        return $this;
-    }
-
-
-    // ------------------------
-    private function addHaving(string $boolean, string $column, string $operator, mixed $value): self
-    {
-        $placeholder = ':h_' . count($this->bindings);
-    
-        $this->bindings[$placeholder] = $value;
-    
-        $this->parts['having'][] = [
-            'boolean' => $boolean,
-            'condition' => "$column $operator $placeholder"
-        ];
-    
-        return $this;
-    }
-
-    // ----------------------------
-    private function addExists(string $boolean, self $sub): self
-    {
-        $subSql = $this->compileSubquery($sub);
-    
-        $this->parts['where'][] = [
-            'boolean' => $boolean,
-            'condition' => "EXISTS $subSql"
-        ];
-    
-        return $this;
-    }
-
-    /* =========================
-       RESET
-    ========================== */
-
-    public function reset(): self
-    {
-        $this->parts = [
-            'type'     => null,
-            'distinct' => false,
-            'select'   => [],
-            'from'     => null,
-            'joins'    => [],
-            'where'    => [],
-            'insert'   => [],
-            'update'   => [],
-        ];
-
+    public function reset(): self {
+        $this->sql = '';
         $this->bindings = [];
-
         return $this;
+    }
+
+    // Execute the query (requires Database instance)
+    public function execute(Database $db): mixed {
+        $result = $db->query($this->sql, $this->bindings);
+        $this->reset();
+        return $result;
+    }
+
+    // Helper to escape table/column names
+    private function escapeIdentifier(string $identifier): string {
+        // Allow * for SELECT *
+        if ($identifier === '*') {
+            return $identifier;
+        }
+        // Remove backticks if present
+        $identifier = trim($identifier, '`');
+        // Replace . with backticks for table.column
+        if (str_contains($identifier, '.')) {
+            $parts = explode('.', $identifier);
+            return '`' . implode('`.`', $parts) . '`';
+        }
+        return '`' . $identifier . '`';
     }
 }

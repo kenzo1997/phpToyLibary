@@ -15,4 +15,3 @@ class Route {
         public array $defaults = []
     ) {}
 }
-?>

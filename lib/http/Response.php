@@ -63,5 +63,30 @@ class Response {
         : $xml->addChild($key, htmlspecialchars((string)$value));
     }
   }
+
+  public function success(mixed $data = null, string $message = '', int $status = 200): void {
+    $response = ['status' => 'success', 'data' => $data, 'message' => $message];
+    $this->json($response, $status);
+  }
+
+  public function error(string $message = '', int $status = 400, mixed $data = null): void {
+    $response = ['status' => 'error', 'message' => $message, 'data' => $data];
+    $this->json($response, $status);
+  }
+
+  public function notFound(string $message = 'Resource not found'): void {
+    $this->error($message, 404);
+  }
+
+  public function unauthorized(string $message = 'Unauthorized'): void {
+    $this->error($message, 401);
+  }
+
+  public function forbidden(string $message = 'Forbidden'): void {
+    $this->error($message, 403);
+  }
+
+  public function internalError(string $message = 'Internal server error'): void {
+    $this->error($message, 500);
+  }
 }
-?>

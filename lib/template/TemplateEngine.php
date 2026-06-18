@@ -55,7 +55,7 @@ class TemplateEngine {
 
     private function getCompiledTemplatePath(string $compiledContent): string {
         // For simplicity, we'll write the compiled content to a temporary file
-        $tempDir = __DIR__ . '../../storage/cache/';
+        $tempDir = __DIR__ . '/../../storage/cache/';
         if (!is_dir($tempDir)) {
             //mkdir($tempDir, 0777, true);
         }
@@ -85,4 +85,3 @@ class TemplateEngine {
         return ob_get_clean();
     }
 }
-?>

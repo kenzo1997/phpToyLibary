@@ -12,12 +12,18 @@ use lib\container\Container;
 use lib\router\Router;
 use lib\http\SessionWrapper;
 use lib\events\EventDispatcher;
+use lib\db\Database;
+use lib\db\SQLBuilder;
+use lib\exception\ErrorHandler;
+use lib\middlewares\RateLimitMiddleware;
 
 use app\controller\HomeController;
 use app\controller\LoginController;
 use app\controller\RegisterController;
 use app\middlewares\AuthMiddleware;
 
+// Load config
+$config = require __DIR__ . '/config/database.php';
 
 // Register routes
 $router = new Router();
@@ -25,13 +31,15 @@ $router = new Router();
 $router->registerController(LoginController::class);
 $router->registerController(RegisterController::class);
 
-$router->group(['prefix' => '/api',  'middlewares' => [['class' => AuthMiddleware::class]]], function(Router $r) {
-   $r->registerController(HomeController::class);
+$router->group(['prefix' => '/api', 'middlewares' => [['class' => AuthMiddleware::class], ['class' => RateLimitMiddleware::class]]], function(Router $r) {
+    $r->registerController(HomeController::class);
 });
 
-// Setup container 
-$container = new Container(); 
+// Setup container
+$container = new Container();
 $container->set(SessionWrapper::class, new SessionWrapper());
+$container->set(Database::class, new Database($config));
+$container->set(SQLBuilder::class, new SQLBuilder());
 
 $dispatcher = new EventDispatcher();
 

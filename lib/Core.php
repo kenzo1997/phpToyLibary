@@ -1,10 +1,12 @@
-<?php 
+<?php
+declare(strict_types=1);
 namespace lib;
 
 use lib\router\Router;
 use lib\http\Request;
 use lib\http\Response;
 use lib\container\Container;
+use lib\exception\ErrorHandler;
 
 class Core {
     private Router $router;
@@ -18,16 +20,19 @@ class Core {
         $this->request = new Request();
         $this->response = new Response();
     }
-    
+
     public function start(): void {
+        $debugMode = defined('APP_DEBUG') ? APP_DEBUG : false;
+        $errorHandler = new ErrorHandler($debugMode);
+        $errorHandler->register();
+
         $uri = parse_url($_SERVER['REQUEST_URI'], PHP_URL_PATH);
         $method = $_SERVER['REQUEST_METHOD'];
 
         $route = $this->router->resolve($uri, $method);
 
         if (!$route) {
-            http_response_code(404);
-            echo "404 Not Found";
+            $this->response->notFound('404 Not Found');
             return;
         }
 
@@ -47,4 +52,3 @@ class Core {
         $controller->{$route['method']}($this->request, $this->response);
     }
 }
-?>

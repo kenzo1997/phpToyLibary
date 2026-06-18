@@ -13,4 +13,3 @@ class Middelware {
         $this->allowedRoles = $allowedRoles;
     }
 }
-?>

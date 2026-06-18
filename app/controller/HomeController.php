@@ -8,16 +8,19 @@ use lib\http\Request;
 use lib\http\Response;
 use lib\router\Route;
 use lib\db\SQLBuilder;
+use lib\db\Database;
 
 use app\services\UserService;
 
 class HomeController extends Controller {
     private UserService $userService;
     private SQLBuilder $builder;
+    private Database $database;
 
-    public function __construct(UserService $userService, SQLBuilder $builder) {
+    public function __construct(UserService $userService, SQLBuilder $builder, Database $database) {
         $this->userService = $userService;
         $this->builder = $builder;
+        $this->database = $database;
     }
     
     #[Route(path: '/', methods: ['GET'], name: 'home')]
@@ -38,9 +41,20 @@ class HomeController extends Controller {
 
     #[Route(path: '/users', methods: ['GET'], name: 'users')]
     public function getUsers(Request $request, Response $response): void {
-        $usersQuery = $this->builder->SELECT('users')->go();
-        echo $usersQuery;
-        $response->send("users called");
+        // Get all users using SQLBuilder with Database
+        $users = $this->builder->SELECT('users')->execute($this->database);
+        $response->json($users);
+    }
+
+    #[Route(path: '/users/with-builder', methods: ['GET'], name: 'users.builder')]
+    public function getUsersWithBuilder(Request $request, Response $response): void {
+        // Example with WHERE and ORDER BY
+        $users = $this->builder
+            ->SELECT('users', ['id', 'name', 'email'])
+            ->WHERE('id', '>', 0)
+            ->ORDER_BY('name', 'ASC')
+            ->execute($this->database);
+        $response->json($users);
     }
 
     #[Route(path: '/users/{id}', methods: ['GET'], name: 'user.profile', requirements: ['id' => '\d+'])]

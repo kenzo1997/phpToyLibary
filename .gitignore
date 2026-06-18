@@ -2,3 +2,21 @@
 extra
 testWebsite
 vendor
+
+.env
+
+# Cache files
+*.cache.php
+lib/storage/cache/*
+storage/cache/*
+
+# Rate limit data
+lib/storage/rate_limits/*
+
+# Logs
+storage/logs/*.log
+storage/logs/*.log.*
+
+# OS files
+.DS_Store
+Thumbs.db

@@ -1,9 +1,9 @@
-<?phpS
+<?php
 
 namespace {{namespace}};
 
-use lib\controller\Request;
-use lib\controller\Response;
+use lib\http\Request;
+use lib\http\Response;
 
 /**
  * {{name}} Middleware
@@ -12,7 +12,7 @@ use lib\controller\Response;
  * @created {{CREATION_DATE}}
  */
 class {{name}} {
-    
+
     public function __construct() {
         // Inject services here if needed
     }
@@ -25,6 +25,6 @@ class {{name}} {
         //     return;
         // }
 
-        echo "{{name}} middleware executed.\n";
+        // Continue to next middleware/controller
     }
 }

@@ -49,5 +49,3 @@ class MakeModel
         return 'Generate a new model class using constructor property promotion.';
     }
 }
-?>
-

@@ -15,4 +15,3 @@ class CookieWrapper {
         return $_COOKIE[$name];
     }
 }
-?>

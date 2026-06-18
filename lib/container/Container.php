@@ -34,6 +34,9 @@ class Container {
             $type = $param->getType();
             if ($type instanceof ReflectionNamedType && !$type->isBuiltin()) {
                 $params[] = $this->get($type->getName());
+            } elseif ($param->isDefaultValueAvailable()) {
+                // Use default value if available
+                $params[] = $param->getDefaultValue();
             } else {
                 throw new \Exception("Cannot resolve parameter \${$param->getName()} of {$id}");
             }
@@ -42,4 +45,3 @@ class Container {
         return $reflectionClass->newInstanceArgs($params);
     }
 }
-?>
